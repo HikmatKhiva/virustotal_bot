@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import TelegramBot from "node-telegram-bot-api";
 import { startCommand, menuCommand } from "./command/index.js";
-import { checkFileHandler } from "./handler/index.js";
+import { checkBankBinCode, checkFileHandler } from "./handler/index.js";
 dotenv.config();
 const token = process.env.BOT_TOKEN; // Ensure the environment variable name matches
 export const bot = new TelegramBot(token, {
@@ -24,6 +24,11 @@ bot.on("callback_query", async (callback) => {
     case "checkFile": {
       bot.sendMessage(chatId, "Faylni yuboring!");
       await checkFileHandler();
+      break;
+    }
+    case "checkBinCode": {
+      bot.sendMessage(chatId, "Codeni kiriting.");
+      await checkBankBinCode();
       break;
     }
     default:

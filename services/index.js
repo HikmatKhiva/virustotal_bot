@@ -4,11 +4,11 @@ import axios from "axios";
 import { bot } from "../app.js";
 import path from "path";
 import validUrl from "valid-url";
-import { getAnalyses, scanFile } from "../utils/api.helpers.js";
+import { getAnalyses, getBinCode, scanFile } from "../utils/api.helpers.js";
 dotenv.config();
 const FILE_SIZE_LIMIT = 30 * 1024 * 1024; // 30 MB
 const __dirname = path.resolve();
-
+const key = import.meta.bin_table_api;
 const resultScan = async (msg) => {
   // get a file data
   const chatId = msg.chat.id;
@@ -48,4 +48,25 @@ const resultScan = async (msg) => {
 };
 // Contact
 async function Contact() {}
-export { resultScan, Contact };
+// Check Bin Code
+async function checkBinCodeService(msg) {
+  const chatId = msg.chat.id;
+  const code = msg.text.trim();
+  await bot.sendMessage(chatId, "Code muvaffaqiyatli qabul qilindi!");
+  const { data } = await getBinCode(code);
+  return bot.sendMessage(
+    chatId,
+    `Card: \n
+    scheme: <b>${data.card.scheme}</b> 
+    turi: <b>${data.card.type}</b>
+    Mamlakat nomi:<b>${data.country.name}</b>
+    Mamlakat valyutasi:<b>${data.country.currency}</b>
+    Bank nomi:<b>${data.bank.name}</b>
+    Bank web sayti:<b>${data.bank.website}</b>
+    Bank raqami:<b>${data.bank.phone}</b>
+   `,
+    { parse_mode: "HTML" }
+  );
+}
+
+export { resultScan, Contact, checkBinCodeService };

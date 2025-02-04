@@ -45,3 +45,10 @@ export async function scanFile(filePath) {
     throw Error(err?.message || "Error occurred while scanning file");
   }
 }
+// get response bin code
+export async function getBinCode(code) {
+  const result = await axios.get(
+    `https://api.bintable.com/v1/${code}?api_key=${process.env.bin_table_api}`
+  );
+  return result.data;
+}
