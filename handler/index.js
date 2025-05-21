@@ -29,7 +29,7 @@ export const checkBankBinCode = async () => {
       }
       await checkBinCodeService(msg);
     } catch (error) {
-      console.error("Error processing document:", error);
+      // console.error("Error processing document:", error);
       await bot.sendMessage(
         chatId,
         "Codeni qayta yuboring, xatolik yuz berdi."

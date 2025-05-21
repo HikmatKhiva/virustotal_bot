@@ -1,53 +1,103 @@
 import fs from "fs";
 import dotenv from "dotenv";
 import axios from "axios";
-import { bot } from "../app.js";
+import { bot, virustotal } from "../app.js";
 import path from "path";
+import { extractDataMD5, messageTypes } from "../utils/helper.js";
 import validUrl from "valid-url";
-import { getAnalyses, getBinCode, scanFile } from "../utils/api.helpers.js";
+import { calculateMD5 } from "../utils/readMD5.js";
+import { getBinCode } from "../binCode/index.js";
 dotenv.config();
 const FILE_SIZE_LIMIT = 30 * 1024 * 1024; // 30 MB
 const __dirname = path.resolve();
-const key = import.meta.bin_table_api;
 const resultScan = async (msg) => {
-  // get a file data
   const chatId = msg.chat.id;
-  const fileId = msg.document.file_id;
-  const fileLink = await bot.getFileLink(fileId);
-  // before rule validations
-  if (msg.document.file_size > FILE_SIZE_LIMIT)
+  // First check if document exists
+  if (!msg.document) {
+    return bot.sendMessage(chatId, "Fayl yuborilmadi");
+  }
+
+  // Then check file size
+  if (msg.document.file_size > FILE_SIZE_LIMIT) {
     return bot.sendMessage(chatId, "Fayl hajmi 30 MB dan katta");
-  if (!msg.document) return bot.sendMessage(chatId, "Fayl yuborilmadi");
-  if (!validUrl.isUri(fileLink)) throw new Error("Invalid URL");
-  // (get and write)a file path
+  }
+
+  // Create temp file path outside try block so it's available in finally
   const tempFilePath = path.join(__dirname, "temp", msg.document.file_name);
 
-  const response = await axios({
-    method: "GET",
-    url: fileLink,
-    responseType: "stream",
-  });
+  try {
+    // Get file data
+    const fileId = msg.document.file_id;
+    const fileLink = await bot.getFileLink(fileId);
 
-  response.data.pipe(
-    fs.createWriteStream(tempFilePath).on("finish", async () => {
-      // Scan the file using VirusTotal
-      const scanResultId = await scanFile(tempFilePath);
-      const response = await getAnalyses(scanResultId);
-      fs.unlinkSync(tempFilePath);
-      return bot.sendMessage(
+    // Validate URL
+    if (!validUrl.isUri(fileLink)) {
+      throw new Error("Invalid URL");
+    }
+
+    // Download the file
+    const response = await axios({
+      method: "GET",
+      url: fileLink,
+      responseType: "stream",
+    });
+
+    // Create a promise to handle the file writing process
+    await new Promise((resolve, reject) => {
+      const fileStream = fs.createWriteStream(tempFilePath);
+      response.data.pipe(fileStream);
+      fileStream.on("finish", resolve);
+      fileStream.on("error", reject);
+    });
+    const md5 = await calculateMD5(tempFilePath);
+    // Check if file has already been scanned (MD5 hash check)
+    const hashCheckResult = await virustotal.checkMD5HASH(md5);
+    if (hashCheckResult.status === 404) {
+      // If not found in database, scan the file
+      await virustotal.scanFile(tempFilePath);
+      setTimeout(async () => {
+        const hashResult = await virustotal.checkMD5HASH(md5);
+        // If found in database, extract data and return results
+        const res = await extractDataMD5(hashResult.data);
+        // Send message before cleaning up the file
+        await bot.sendMessage(chatId, messageTypes.checkFile(res), {
+          parse_mode: "HTML",
+        });
+      }, 10000);
+      await bot.sendMessage(
         chatId,
-        `Tekshiruv natijasida 66ta antivirusdan: \n
-        zararli: <b>${response.data.attributes.stats.malicious}</b> 
-        shubhali: <b>${response.data.attributes.stats.suspicious}</b>
-        aniqlanmagan:<b>${response.data.attributes.stats.undetected}</b> deb topildi.
-       `,
-        { parse_mode: "HTML" }
+        "Sizning fayl bazada topilmadi uni tekshirib 2-3 daqiqadan keyin natijasi sizga yuboriladi."
       );
-    })
-  );
+      return true; // Indicate successful completion
+    } else {
+      // If found in database, extract data and return results
+      const res = await extractDataMD5(hashCheckResult.data);
+      // Send message before cleaning up the file
+      await bot.sendMessage(chatId, messageTypes.checkFile(res), {
+        parse_mode: "HTML",
+      });
+
+      return true; // Indicate successful completion
+    }
+  } catch (error) {
+    console.error("Error processing file:", error);
+    await bot.sendMessage(
+      chatId,
+      "Xatolik yuz berdi. Iltimos qaytadan urinib ko'ring."
+    );
+    return false; // Indicate error
+  } finally {
+    // Always clean up the temp file, regardless of success or failure
+    try {
+      if (fs.existsSync(tempFilePath)) {
+        fs.unlinkSync(tempFilePath);
+        console.log(`Temporary file deleted: ${tempFilePath}`);
+      }
+    } catch (cleanupError) {
+      console.error("Error during cleanup:", cleanupError);
+    }
+  }
 };
-// Contact
-async function Contact() {}
 // Check Bin Code
 async function checkBinCodeService(msg) {
   const chatId = msg.chat.id;
@@ -68,5 +118,4 @@ async function checkBinCodeService(msg) {
     { parse_mode: "HTML" }
   );
 }
-
-export { resultScan, Contact, checkBinCodeService };
+export { resultScan, checkBinCodeService };
